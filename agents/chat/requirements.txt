@@ -1,0 +1,4 @@
+google-adk>=1.5.0,<2.0.0
+google-cloud-aiplatform[adk,agent_engines]>=1.149.0,<2.0.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0

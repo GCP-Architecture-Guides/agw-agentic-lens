@@ -1,0 +1,4 @@
+project_id      = "YOUR_PROJECT_ID"
+organization_id = "YOUR_ORG_ID"
+location        = "us-east1"
+prefix          = "myorg"
