@@ -1,0 +1,7 @@
+# X-Ray Librarian — Secure Fetcher
+# Tools and instruction are in src/librarian.py and src/github_tools.py.
+# Deployment identity is enforced by adk.yaml (AGENT_IDENTITY).
+# IAM: roles/secretmanager.secretAccessor on secret github-pat-token (see security/iam).
+name: xray-librarian
+model: gemini-2.5-pro
+description: Secure Fetcher - Fetches code context via Secret Manager and GitHub API.

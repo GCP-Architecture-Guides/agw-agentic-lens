@@ -1,0 +1,6 @@
+# X-Ray Specialist — Builder (secure Terraform generator)
+# Deployment identity is enforced by adk.yaml (AGENT_IDENTITY).
+# System instruction (including CRITICAL RESOURCE BOUNDARIES / grounding rules) is in root_agent.yaml.
+name: xray-specialist
+model: gemini-2.5-pro
+description: Builder - Generates secure Terraform.

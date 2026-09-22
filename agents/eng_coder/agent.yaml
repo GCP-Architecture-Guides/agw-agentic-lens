@@ -1,0 +1,4 @@
+name: eng_coder
+model: gemini-2.5-pro
+identity: agentic_prism_eng_coder
+description: "Senior DevOps Engineer. Writes Terraform/Python from plan or fix request."

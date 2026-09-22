@@ -363,11 +363,86 @@ fetch aiplatform.googleapis.com/agent_engine
 
 ---
 
-## Agent Example
+## Multi-Agent Architecture
+
+This project implements a **hierarchical multi-agent system** with 13 specialized agents organized into departments. Each agent is deployed as its own Reasoning Engine with independent SPIFFE identity, OTEL telemetry, and gateway routing.
+
+### Agent Hierarchy
+
+```
+                              ┌──────────────────┐
+                              │    Supervisor     │  gemini-2.5-flash
+                              │  (Orchestrator)   │  Routes to departments
+                              └────────┬─────────┘
+                    ┌──────────────────┼──────────────────┐
+                    │                  │                    │
+          ┌─────────▼────────┐ ┌──────▼────────┐ ┌───────▼────────┐
+          │   Engineering    │ │   X-Ray        │ │     Chat       │
+          │   Department     │ │   Department   │ │   (Direct)     │
+          └─────────┬────────┘ └──────┬────────┘ └───────┬────────┘
+                    │                  │                    │
+      ┌─────────────┼──────────┐     │              ┌─────▼─────────┐
+      │             │          │     │              │ Brand         │
+┌─────▼──────┐ ┌───▼────┐ ┌───▼──┐  │              │ Ambassador   │
+│ eng_scout  │ │eng_coder│ │eng_  │  │              │ gemini-2.5-  │
+│ Research   │ │IaC Code │ │sent. │  │              │ flash        │
+│ 2.5-flash  │ │2.5-pro  │ │2.5-  │  │              └──────────────┘
+└────────────┘ └────────┘ │flash │  │
+                          └──────┘  │
+              ┌────────┐            │
+              │eng_qsr │      ┌─────┼──────────────┐
+              │Review  │      │     │              │
+              │2.5-flash│ ┌───▼────┐│┌────────┐┌───▼─────┐┌──────────┐
+              └────────┘ │xray_   │││xray_   ││xray_    ││xray_     │
+                         │architect│││specialist│auditor  ││librarian │
+                         │2.5-pro ││└────────┘└─────────┘└──────────┘
+                         └────────┘│ 2.5-pro    2.5-pro    (default)
+                                   │
+                             ┌─────▼──────┐
+                             │xray_manager│
+                             │2.5-pro     │
+                             └────────────┘
+```
+
+### Agent Roster
+
+| Agent | Model | Department | Role |
+|-------|-------|------------|------|
+| **supervisor** | `gemini-2.5-flash` | — | Top-level orchestrator, routes queries to department heads |
+| **eng_lead** | `gemini-2.5-pro` | Engineering | Department head, coordinates engineering specialists |
+| **eng_scout** | `gemini-2.5-flash` | Engineering | Research & discovery — finds GCP docs and architecture patterns |
+| **eng_coder** | `gemini-2.5-pro` | Engineering | Generates Terraform / IaC code for GCP solutions |
+| **eng_sentinel** | `gemini-2.5-flash` | Engineering | Security & compliance checks on generated code |
+| **eng_quality_and_security_reviewer** | `gemini-2.5-flash` | Engineering | Code review with security focus |
+| **xray_manager** | `gemini-2.5-pro` | X-Ray | Department head, coordinates architecture review specialists |
+| **xray_architect** | `gemini-2.5-pro` | X-Ray | Deep architecture analysis and recommendations |
+| **xray_specialist** | `gemini-2.5-pro` | X-Ray | Specialized domain expertise |
+| **xray_auditor** | `gemini-2.5-pro` | X-Ray | Compliance and audit review |
+| **xray_librarian** | (inherited) | X-Ray | Knowledge base and documentation management |
+| **chat** | `gemini-2.5-flash` | Direct | Google Cloud brand ambassador with governed egress |
+| **events** | `gemini-2.5-flash` | Direct | Event and conference information agent |
+
+### Inter-Agent Communication
+
+All 13 agents are deployed as independent Reasoning Engines. The supervisor agent orchestrates by calling department heads, who in turn delegate to specialists:
+
+```
+User → Supervisor → eng_lead → eng_scout (research)
+                              → eng_coder (generate)
+                              → eng_sentinel (validate)
+                              → eng_quality_and_security_reviewer (review)
+
+User → Supervisor → xray_manager → xray_architect (analyze)
+                                  → xray_specialist (deep dive)
+                                  → xray_auditor (compliance)
+                                  → xray_librarian (reference)
+```
+
+Every inter-agent call flows through the **egress gateway**, subject to Model Armor content scanning, SGP semantic evaluation, and PSC routing enforcement.
+
+### Agent Example — Chat Agent with Governed Egress
 
 > **Code**: [`agents/chat/agent.py`](agents/chat/agent.py)
-
-A clean, production-ready ADK agent that demonstrates all governance integrations:
 
 ```python
 from google.adk.agents import LlmAgent
@@ -382,9 +457,9 @@ def fetch_url(url: str) -> str:
     # ... routes through egress gateway PSC allowlist ...
 
 root_agent = LlmAgent(
-    name="chat_agent",
+    name="agentic_prism_chat",
     model="gemini-2.5-flash",
-    description="A GCP brand ambassador with governed egress.",
+    description="The Google Cloud Brand Ambassador.",
     instruction=BRAND_AMBASSADOR_INSTRUCTION,
     tools=[fetch_url],
 )
@@ -394,6 +469,111 @@ root_agent = LlmAgent(
 - `fetch_url` explicitly routes through `HTTPS_PROXY` / `HTTP_PROXY` set by the gateway runtime
 - Returns `[GATEWAY BLOCKED]` on `ConnectionError` — prevents hallucination fallback
 - The agent instructs the model to **never infer content** for blocked URLs
+
+---
+
+## Glass UI — Frontend Application
+
+> **Code**: [`ui/`](ui/)
+
+The system includes a web-based **Glass UI** built on FastAPI that provides a polished chat interface for interacting with the multi-agent system.
+
+### Architecture
+
+```
+┌────────────────────┐        ┌─────────────────────┐
+│   Browser          │        │  Cloud Run           │
+│   (Glass UI SPA)   │───────▶│  glass_ui_api.py     │
+│                    │        │                       │
+│  • Chat interface  │        │  • FastAPI backend    │
+│  • Demo scenarios  │        │  • Routes to agents   │
+│  • Agent selector  │        │  • Landing bypass     │
+└────────────────────┘        │  • Health checks      │
+                              └──────────┬────────────┘
+                                         │
+                              ┌──────────▼────────────┐
+                              │  Vertex AI Agent       │
+                              │  Engine (via           │
+                              │  Ingress Gateway)      │
+                              └────────────────────────┘
+```
+
+### UI Features
+- **Agent Selector** — Switch between Chat, Engineering, and X-Ray agents
+- **Demo Scenarios** — Pre-built prompts showcasing governance features
+- **Streaming Responses** — Real-time streaming from Reasoning Engines
+- **Landing Form Bypass** — Auto-dismisses welcome forms for demo environments
+
+### Build & Deploy
+
+```bash
+# Build the patched UI image
+gcloud builds submit . \
+  --config=cloudbuild.yaml \
+  --project=YOUR_PROJECT_ID
+
+# Deploy to Cloud Run
+gcloud run deploy your-ui-service \
+  --image=REGION-docker.pkg.dev/YOUR_PROJECT_ID/your-registry/your-image:latest \
+  --region=YOUR_REGION \
+  --project=YOUR_PROJECT_ID
+```
+
+---
+
+## Deployment Pipeline
+
+> **Script**: [`scripts/deploy.sh`](scripts/deploy.sh)
+
+The deploy script handles the complete lifecycle for all 13 agents:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    deploy.sh Pipeline                      │
+│                                                            │
+│  1. Source versions.env (PROJECT_ID, REGION, MODEL)        │
+│  2. Clean up stale staging directories                     │
+│  3. Inject MODEL_VERSION into agent.yaml files             │
+│  4. Pre-flight: version pin validation                     │
+│  5. GatewayAgent SDK compliance check                      │
+│  6. For each agent (parallel, up to 8):                    │
+│     a. Check for existing RE with same name                │
+│     b. Pass --agent_engine_id for UPDATE (not CREATE)      │
+│     c. adk deploy agent_engine                             │
+│     d. Post-deploy: strip contextSpec                      │
+│     e. Grant AGENT_IDENTITY IAM bindings                   │
+│  7. Re-merge peer engine IDs for inter-agent routing       │
+│  8. Report results                                         │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Configuration
+
+```bash
+# versions.env.example
+PROJECT_ID=YOUR_PROJECT_ID
+REGION=us-east1
+ORG_ID=YOUR_ORG_ID
+MODEL_VERSION=gemini-2.5-pro
+AGENT_GATEWAY_INGRESS=projects/YOUR_PROJECT_NUMBER/locations/us-east1/agentGateways/your-prefix-ingress-gateway
+AGENT_GATEWAY_EGRESS=projects/YOUR_PROJECT_NUMBER/locations/us-east1/agentGateways/your-prefix-egress-gateway
+```
+
+### Deploy Commands
+
+```bash
+# Deploy ALL agents (parallel)
+./scripts/deploy.sh
+
+# Deploy specific agents only
+./scripts/deploy.sh supervisor chat eng_lead eng_coder
+
+# Skip agents that already exist
+SKIP_EXISTING=1 ./scripts/deploy.sh
+
+# Deploy X-Ray department only
+./scripts/deploy.sh xray_manager xray_architect xray_specialist xray_auditor xray_librarian
+```
 
 ---
 
@@ -427,14 +607,26 @@ This creates (~10 minutes):
 - Organization Policy constraints
 - Optional: IAP on ingress gateway
 
-### 3. Deploy your agent
+### 3. Deploy agents
 
 ```bash
-# The foundation generates a deploy script:
-./scripts/deploy_chat_agent.sh
+# Configure
+cp versions.env.example versions.env
+# Edit versions.env with your project details
+
+# Deploy all 13 agents
+./scripts/deploy.sh
 ```
 
-### 4. Verify governance
+### 4. Deploy the UI
+
+```bash
+# Build and deploy Glass UI to Cloud Run
+cd ui/
+gcloud builds submit . --project=YOUR_PROJECT_ID
+```
+
+### 5. Verify governance
 
 ```bash
 ./scripts/verify_policies.sh YOUR_ORG_ID YOUR_PROJECT_ID your-prefix
@@ -448,6 +640,27 @@ This creates (~10 minutes):
 .
 ├── README.md                                    # This file
 ├── LICENSE                                      # Apache 2.0
+├── versions.env.example                         # Configuration template
+│
+├── agents/                                      # All 13 agents (business logic only)
+│   ├── supervisor/                              # Top-level orchestrator
+│   │   ├── agent.py                             # Routes to department heads
+│   │   ├── agent.yaml                           # ADK config
+│   │   └── requirements.txt
+│   ├── chat/                                    # Brand ambassador + governed egress
+│   │   ├── agent.py
+│   │   └── requirements.txt
+│   ├── eng_lead/                                # Engineering department head
+│   ├── eng_scout/                               # Research & discovery
+│   ├── eng_coder/                               # IaC code generation
+│   ├── eng_sentinel/                            # Security validation
+│   ├── eng_quality_and_security_reviewer/       # Code review
+│   ├── xray_manager/                            # X-Ray department head
+│   ├── xray_architect/                          # Architecture analysis
+│   ├── xray_specialist/                         # Domain expertise
+│   ├── xray_auditor/                            # Compliance review
+│   ├── xray_librarian/                          # Knowledge management
+│   └── events/                                  # Event information
 │
 ├── terraform/
 │   └── foundation/                              # Complete Terraform module
@@ -457,21 +670,22 @@ This creates (~10 minutes):
 │       ├── 04_observability.tf                  # Dashboards, alerts, notification channels
 │       ├── 05_org_policies.tf                   # 3 custom org policy constraints
 │       ├── 06_agent_provisioning.tf             # Automated agent deploy script generation
-│       ├── variables.tf                         # All configurable parameters
+│       ├── variables.tf                         # 40+ configurable parameters
 │       ├── outputs.tf                           # Gateway names, constraint names
 │       ├── providers.tf                         # Google provider config
 │       └── terraform.tfvars.example             # Template with placeholder values
 │
-├── agents/
-│   └── chat/                                    # Example ADK agent
-│       ├── agent.py                             # Clean agent with governed egress
-│       └── requirements.txt                     # Pinned dependencies
+├── ui/                                          # Glass UI (FastAPI + SPA)
+│   ├── glass_ui_api.py                          # FastAPI backend (1200+ lines)
+│   ├── Dockerfile                               # Container build
+│   └── patch_scenarios.sh                       # Demo scenario customization
 │
 ├── docs/
 │   └── org-policy-guardrails.md                 # Detailed org policy documentation
 │
 └── scripts/
-    └── verify_policies.sh                       # Post-deploy verification script
+    ├── deploy.sh                                # Multi-agent deploy pipeline
+    └── verify_policies.sh                       # Post-deploy verification
 ```
 
 ---

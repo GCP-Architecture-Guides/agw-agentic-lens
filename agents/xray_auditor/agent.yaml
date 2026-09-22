@@ -1,0 +1,6 @@
+# X-Ray Auditor — Compliance Engine
+# Deployment identity is enforced by adk.yaml (AGENT_IDENTITY).
+name: xray-auditor
+model: gemini-2.5-pro
+description: Compliance - Validates Least Privilege.
+

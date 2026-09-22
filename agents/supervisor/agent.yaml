@@ -1,0 +1,21 @@
+# Agentic-Prism Supervisor Agent — secure gateway and router
+# Routes to four departments: Engineering (eng_lead), X-Ray (xray_manager), Events, Chat.
+# Low-latency routing via gemini-2.5-flash.
+# name uses underscore to match IAM principal .../agents/agentic_prism_supervisor
+name: agentic_prism_supervisor
+description: Orchestrator that routes user queries to specialist agents after security gate.
+
+model: gemini-2.5-flash
+
+input:
+  - user_query      # string — raw user message
+  - security_level  # string: "medium" | "high" | "off" — Model Armor gate
+  - session_id      # string — Agent Engine session (for memory / history)
+
+output:
+  # On BLOCK: agent="BLOCK", response="Request blocked by Security Policy."
+  # On dispatch: target_agent=<agent_name>, forwarded_query=<query>
+  - agent            # "BLOCK" or target agent id
+  - response         # Present when blocked; user-facing message
+  - target_agent    # Present when safe; one of four departments: eng_lead | xray_manager | events | chat
+  - forwarded_query # Query to forward (sanitized when applicable)

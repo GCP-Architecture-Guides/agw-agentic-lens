@@ -1,0 +1,5 @@
+# X-Ray Architect — Planner (lists required Terraform resources)
+# Deployment identity is enforced by adk.yaml (AGENT_IDENTITY).
+name: xray-architect
+model: gemini-2.5-pro
+description: Planner - Lists required infrastructure (JSON list of Terraform resources).

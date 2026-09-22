@@ -1,0 +1,4 @@
+# Deployment identity is enforced by adk.yaml (AGENT_IDENTITY). Do not add identity here.
+name: eng_scout
+model: gemini-2.5-flash
+description: "Architect. Plans infrastructure requirements (no code)."

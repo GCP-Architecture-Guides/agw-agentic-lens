@@ -1,0 +1,4 @@
+# Deployment identity is enforced by adk.yaml (AGENT_IDENTITY). Do not add identity here.
+name: eng_lead
+model: gemini-2.5-pro
+description: "Engineering Manager. Orchestrates the Scout, Coder, and Sentinel agents."
